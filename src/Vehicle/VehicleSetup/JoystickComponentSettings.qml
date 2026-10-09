@@ -54,20 +54,28 @@ ColumnLayout {
             Layout.fillWidth: true
             visible: joystick.isGamepad && _joystickSettings.dualThrottleEnabled.rawValue
             spacing: _margins
+            Layout.minimumWidth: 0
+            Layout.maximumWidth: ScreenTools.defaultFontPixelWidth * 38
 
             QGCLabel {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: qsTr("Select the physical input channels for forward and reverse. A new, final channel named 'Combined throttle' will move R2/RT positive and L2/LT negative. Calibrate that final channel as Throttle; leave both triggers released when prompted to center controls. Changing this configuration requires recalibration.")
+                Layout.minimumWidth: 0
+                text: qsTr("Choose the forward and reverse channels. Calibrate the final 'Combined throttle' channel; release both triggers to center. Channel changes require recalibration.")
             }
 
             QGCLabel { text: qsTr("Forward trigger (R2 / RT)") }
             QGCComboBox {
-                Layout.fillWidth: true
+                // Short channel labels plus a fixed control width avoid stretching
+                // the surrounding calibration/monitor view on the Steam Deck.
+                Layout.fillWidth: false
+                Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 20
+                Layout.maximumWidth: ScreenTools.defaultFontPixelWidth * 20
+                sizeToContents: false
                 model: {
                     let choices = [];
                     for (let i = 0; i < joystick.axisCount - 1; ++i) {
-                        choices.push(qsTr("Channel %1 (%2)").arg(i + 1).arg(joystick.axisLabel(i)));
+                        choices.push(qsTr("Channel %1").arg(i + 1));
                     }
                     return choices;
                 }
@@ -79,11 +87,16 @@ ColumnLayout {
 
             QGCLabel { text: qsTr("Reverse trigger (L2 / LT)") }
             QGCComboBox {
-                Layout.fillWidth: true
+                // Short channel labels plus a fixed control width avoid stretching
+                // the surrounding calibration/monitor view on the Steam Deck.
+                Layout.fillWidth: false
+                Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 20
+                Layout.maximumWidth: ScreenTools.defaultFontPixelWidth * 20
+                sizeToContents: false
                 model: {
                     let choices = [];
                     for (let i = 0; i < joystick.axisCount - 1; ++i) {
-                        choices.push(qsTr("Channel %1 (%2)").arg(i + 1).arg(joystick.axisLabel(i)));
+                        choices.push(qsTr("Channel %1").arg(i + 1));
                     }
                     return choices;
                 }
