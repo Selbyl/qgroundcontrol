@@ -206,6 +206,9 @@ public:
     int buttonCount() const { return _totalButtonCount; }
     int axisCount() const { return _axisCount; }
     virtual bool requiresCalibration() const { return true; }
+    // SDL3 standardized gamepad axes; used by the opt-in Steam Deck rover profile.
+    virtual bool supportsGamepadRoverProfile() const { return false; }
+    virtual float gamepadRoverAxisValue(GamepadAxis axis) const { Q_UNUSED(axis); return 0.0f; }
     virtual bool hasRumble() const { return false; }
     virtual bool hasRumbleTriggers() const { return false; }
     virtual bool hasLED() const { return false; }

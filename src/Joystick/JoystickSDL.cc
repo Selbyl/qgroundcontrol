@@ -7,6 +7,7 @@
 #include <QtCore/QThread>
 
 #include <array>
+#include <algorithm>
 
 #include <SDL3/SDL.h>
 
@@ -471,6 +472,37 @@ int JoystickSDL::_getAxisValue(int idx) const
     }
 
     return SDL_GetJoystickAxis(_sdlJoystick, idx);
+}
+
+bool JoystickSDL::supportsGamepadRoverProfile() const
+{
+    if (!_sdlGamepad) {
+        return false;
+    }
+    // Never assume that an arbitrary raw axis is a trigger. This profile is
+    // only safe with SDL3's standardized gamepad axis mapping.
+    constexpr SDL_GamepadAxis axes[] = {
+        SDL_GAMEPAD_AXIS_LEFTX, SDL_GAMEPAD_AXIS_RIGHTX, SDL_GAMEPAD_AXIS_RIGHTY,
+        SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER
+    };
+    for (SDL_GamepadAxis axis : axes) {
+        if (!SDL_GamepadHasAxis(_sdlGamepad, axis)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+float JoystickSDL::gamepadRoverAxisValue(GamepadAxis axis) const
+{
+    if (!_sdlGamepad || axis < AxisLeftX || axis > AxisTriggerRight) {
+        return 0.0f;
+    }
+    const int raw = SDL_GetGamepadAxis(_sdlGamepad, static_cast<SDL_GamepadAxis>(axis));
+    if (axis == AxisTriggerLeft || axis == AxisTriggerRight) {
+        return std::clamp(static_cast<float>(raw) / 32767.0f, 0.0f, 1.0f);
+    }
+    return std::clamp(static_cast<float>(raw) / (raw < 0 ? 32768.0f : 32767.0f), -1.0f, 1.0f);
 }
 
 bool JoystickSDL::_getHat(int hat, int idx) const

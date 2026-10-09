@@ -32,6 +32,8 @@ public:
     int instanceId() const { return _instanceId; }
     void setInstanceId(int instanceId) { _instanceId = instanceId; }
     bool requiresCalibration() const override { return !isGamepad(); }
+    bool supportsGamepadRoverProfile() const override;
+    float gamepadRoverAxisValue(GamepadAxis axis) const override;
 
     // Haptic and LED
     bool hasRumble() const override;
