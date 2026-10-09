@@ -1,4 +1,6 @@
 #include "JoystickSDL.h"
+#include "Fact.h"
+#include <cmath>
 #include "JoystickManager.h"
 #include "SDLJoystick.h"
 #include "QGCLoggingCategory.h"
@@ -106,6 +108,9 @@ static bool sdlEventWatcher(void *userdata, SDL_Event *event)
 
 JoystickSDL::JoystickSDL(const QString &name, const QList<int> &gamepadAxes, const QList<int> &nonGamepadAxes, int buttonCount, int hatCount, int instanceId, QObject *parent)
     : Joystick(name, gamepadAxes.length() + nonGamepadAxes.length()
+               // One extra, internal throttle channel for SDL3 gamepads.
+               // Raw joysticks retain their original channel count.
+               + (gamepadAxes.isEmpty() ? 0 : 1)
 #ifdef TEST_WITH_VIRTUAL_AXES
                + 2  // Add 2 virtual axes for testing
 #endif
@@ -114,6 +119,19 @@ JoystickSDL::JoystickSDL(const QString &name, const QList<int> &gamepadAxes, con
     , _nonGamepadAxes(nonGamepadAxes)
     , _instanceId(instanceId)
 {
+    const auto syncDualThrottleSettings = [this]() {
+        _dualThrottleEnabled.store(settings()->dualThrottleEnabled()->rawValue().toBool());
+        _dualThrottleForwardChannel.store(settings()->dualThrottleForwardChannel()->rawValue().toInt());
+        _dualThrottleReverseChannel.store(settings()->dualThrottleReverseChannel()->rawValue().toInt());
+    };
+    syncDualThrottleSettings();
+    connect(settings()->dualThrottleEnabled(), &Fact::rawValueChanged,
+            this, syncDualThrottleSettings);
+    connect(settings()->dualThrottleForwardChannel(), &Fact::rawValueChanged,
+            this, syncDualThrottleSettings);
+    connect(settings()->dualThrottleReverseChannel(), &Fact::rawValueChanged,
+            this, syncDualThrottleSettings);
+
     qCDebug(JoystickSDLLog) << this;
 }
 
@@ -421,6 +439,32 @@ int JoystickSDL::_getAxisValue(int idx) const
 {
     if (idx < 0) {
         return 0;
+    }
+
+    // Virtual channel is always last; it exists so QGC's normal calibration
+    // wizard can learn both ends and the center of the combined throttle.
+    if (!_gamepadAxes.isEmpty() && idx == axisCount() - 1) {
+        if (!_sdlGamepad || !_dualThrottleEnabled.load()) {
+            return 0;
+        }
+        const int forward = _dualThrottleForwardChannel.load() - 1;
+        const int reverse = _dualThrottleReverseChannel.load() - 1;
+        if (forward < 0 || reverse < 0 || forward == reverse ||
+            forward >= _gamepadAxes.length() || reverse >= _gamepadAxes.length()) {
+            return 0; // Invalid mapping: fail neutral.
+        }
+        const auto fAxis = static_cast<SDL_GamepadAxis>(_gamepadAxes[forward]);
+        const auto rAxis = static_cast<SDL_GamepadAxis>(_gamepadAxes[reverse]);
+        const bool fTrigger = fAxis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || fAxis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
+        const bool rTrigger = rAxis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || rAxis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
+        if (!fTrigger || !rTrigger || !SDL_GamepadHasAxis(_sdlGamepad, fAxis) ||
+            !SDL_GamepadHasAxis(_sdlGamepad, rAxis)) {
+            return 0; // Only SDL3 normalized trigger axes are valid sources.
+        }
+        const float f = std::clamp(static_cast<float>(SDL_GetGamepadAxis(_sdlGamepad, fAxis)) / 32767.f, 0.f, 1.f);
+        const float r = std::clamp(static_cast<float>(SDL_GetGamepadAxis(_sdlGamepad, rAxis)) / 32767.f, 0.f, 1.f);
+        // Center: 0; forward: +32767; reverse: -32768.
+        return static_cast<int>(std::lround((f - r) * (f >= r ? 32767.f : 32768.f)));
     }
 
 #ifdef TEST_WITH_VIRTUAL_AXES
@@ -788,6 +832,9 @@ QString JoystickSDL::gamepadType() const
 
 QString JoystickSDL::axisLabel(int axis) const
 {
+    if (!_gamepadAxes.isEmpty() && axis == axisCount() - 1) {
+        return tr("Combined throttle (forward - reverse)");
+    }
     if (axis < 0) {
         return tr("Axis %1").arg(axis);
     }
@@ -1088,6 +1135,9 @@ bool JoystickSDL::hasButton(int button) const
 
 bool JoystickSDL::hasAxis(int axis) const
 {
+    if (!_gamepadAxes.isEmpty() && axis == axisCount() - 1) {
+        return true;
+    }
     if (_sdlGamepad && axis >= 0 && axis < _gamepadAxes.length()) {
         return SDL_GamepadHasAxis(_sdlGamepad, static_cast<SDL_GamepadAxis>(_gamepadAxes[axis]));
     }

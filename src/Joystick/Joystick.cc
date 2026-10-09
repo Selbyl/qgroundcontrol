@@ -110,6 +110,9 @@ Joystick::Joystick(const QString &name, int axisCount, int buttonCount, int hatC
         ensureFactThread(_joystickSettings.circleCorrection());
         ensureFactThread(_joystickSettings.useDeadband());
         ensureFactThread(_joystickSettings.negativeThrust());
+        ensureFactThread(_joystickSettings.dualThrottleEnabled());
+        ensureFactThread(_joystickSettings.dualThrottleForwardChannel());
+        ensureFactThread(_joystickSettings.dualThrottleReverseChannel());
         ensureFactThread(_joystickSettings.throttleSmoothing());
         ensureFactThread(_joystickSettings.axisFrequencyHz());
         ensureFactThread(_joystickSettings.buttonFrequencyHz());
@@ -152,6 +155,17 @@ Joystick::Joystick(const QString &name, int axisCount, int buttonCount, int hatC
     connect(_joystickSettings.enableAdditionalAxis6(), &Fact::rawValueChanged, this, [this]() {
         _joystickSettings.calibrated()->setRawValue(false);
     });
+
+    // A trigger source change invalidates the previously calibrated throttle.
+    const auto invalidateDualThrottleCalibration = [this]() {
+        _joystickSettings.calibrated()->setRawValue(false);
+    };
+    connect(_joystickSettings.dualThrottleEnabled(), &Fact::rawValueChanged,
+            this, invalidateDualThrottleCalibration);
+    connect(_joystickSettings.dualThrottleForwardChannel(), &Fact::rawValueChanged,
+            this, invalidateDualThrottleCalibration);
+    connect(_joystickSettings.dualThrottleReverseChannel(), &Fact::rawValueChanged,
+            this, invalidateDualThrottleCalibration);
 
     _resetFunctionToAxisMap();
     _resetAxisCalibrationData();
@@ -965,53 +979,8 @@ void Joystick::_handleAxis()
             qCWarning(JoystickLog) << "Internal Error: Joystick not enabled for vehicle!";
             return;
         }
-        // Opt-in native Steam Deck rover control profile. Avoid virtual uinput
-        // joysticks and combine the two SDL3 analog triggers directly. This
-        // branch bypasses the four-axis transmitter calibration requirement.
-        if (qEnvironmentVariableIntValue("QGC_STEAMDECK_ROVER") == 1) {
-            if (!supportsGamepadRoverProfile() ||
-                !vehicle->supports()->throttleModeCenterZero() ||
-                !vehicle->supports()->negativeThrust()) {
-                // Fail closed: do not guess raw input axes or send non-neutral
-                // commands to a vehicle that does not support reverse thrust.
-                return;
-            }
-
-            const float throttle = SteamDeckRoverProfile::throttle(
-                gamepadRoverAxisValue(AxisTriggerRight), gamepadRoverAxisValue(AxisTriggerLeft));
-            const float steering = SteamDeckRoverProfile::steering(gamepadRoverAxisValue(AxisLeftX));
-            const float pitchRate = SteamDeckRoverProfile::gimbalPitchRate(gamepadRoverAxisValue(AxisRightY));
-            const float yawRate = SteamDeckRoverProfile::gimbalYawRate(gamepadRoverAxisValue(AxisRightX));
-
-            // PX4 rover manual control uses yaw for steering and z for throttle.
-            // Keep roll/pitch neutral. Preserve button bitmap for downstream GCS.
-            quint64 buttonPressedBits = 0;
-            for (int buttonIndex = 0; buttonIndex < _totalButtonCount; ++buttonIndex) {
-                if (_buttonEventStates[buttonIndex] == ButtonEventDownTransition ||
-                    _buttonEventStates[buttonIndex] == ButtonEventRepeat) {
-                    buttonPressedBits |= (quint64(1) << buttonIndex);
-                }
-            }
-            const auto lowButtons = static_cast<quint16>(buttonPressedBits & 0xffff);
-            const auto highButtons = static_cast<quint16>((buttonPressedBits >> 16) & 0xffff);
-            emit axisValues(0.f, 0.f, steering, throttle);
-            const float unused = qQNaN();
-            vehicle->sendJoystickDataThreadSafe(0.f, 0.f, steering, throttle,
-                lowButtons, highButtons, unused, unused, unused, unused,
-                unused, unused, unused, unused);
-
-            if (GimbalController *const gimbal = vehicle->gimbalController()) {
-                // GimbalController runs on the Qt GUI thread. Do not call it
-                // directly from the joystick polling thread.
-                QMetaObject::invokeMethod(gimbal, [gimbal, pitchRate, yawRate]() {
-                    if (gimbal->activeGimbal()) {
-                        gimbal->sendGimbalRate(pitchRate, yawRate);
-                    }
-                }, Qt::QueuedConnection);
-            }
-            return;
-        }
-
+        // Normal joystick calibration applies to the virtual combined throttle
+        // axis exactly as for a centered thumbstick.
         if (!_joystickSettings.calibrated()->rawValue().toBool()) {
             return;
         }
@@ -1223,6 +1192,26 @@ void Joystick::_handleAxis()
             const quint64 buttonBit = static_cast<quint64>(1LL << buttonIndex);
             if (_buttonEventStates[buttonIndex] == ButtonEventDownTransition || _buttonEventStates[buttonIndex] == ButtonEventRepeat) {
                 buttonPressedBits |= buttonBit;
+            }
+        }
+
+        // In rover/gimbal mode, reserve the right stick for gimbal rates.
+        // The user's calibrated yaw (left-stick X) and combined throttle are
+        // still sent through the normal joystick path.
+        if (qEnvironmentVariableIntValue("QGC_STEAMDECK_ROVER") == 1 &&
+            supportsGamepadRoverProfile()) {
+            roll = 0.f;
+            pitch = 0.f;
+            const float pitchRate = SteamDeckRoverProfile::gimbalPitchRate(
+                gamepadRoverAxisValue(AxisRightY));
+            const float yawRate = SteamDeckRoverProfile::gimbalYawRate(
+                gamepadRoverAxisValue(AxisRightX));
+            if (GimbalController *const gimbal = vehicle->gimbalController()) {
+                QMetaObject::invokeMethod(gimbal, [gimbal, pitchRate, yawRate]() {
+                    if (gimbal->activeGimbal()) {
+                        gimbal->sendGimbalRate(pitchRate, yawRate);
+                    }
+                }, Qt::QueuedConnection);
             }
         }
 

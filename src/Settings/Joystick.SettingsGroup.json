@@ -31,6 +31,31 @@
             "label": "Enable negative thrust (reverse) on throttle axis"
         },
         {
+            "name": "dualThrottleEnabled",
+            "shortDesc": "Combine two analog triggers into a centered, calibratable throttle channel",
+            "type": "bool",
+            "default": false,
+            "label": "Dual-trigger throttle"
+        },
+        {
+            "name": "dualThrottleForwardChannel",
+            "shortDesc": "One-based input channel for forward throttle trigger",
+            "type": "uint32",
+            "default": 6,
+            "min": 1,
+            "max": 32,
+            "label": "Forward trigger input channel"
+        },
+        {
+            "name": "dualThrottleReverseChannel",
+            "shortDesc": "One-based input channel for reverse throttle trigger",
+            "type": "uint32",
+            "default": 5,
+            "min": 1,
+            "max": 32,
+            "label": "Reverse trigger input channel"
+        },
+        {
             "name": "throttleSmoothing",
             "shortDesc": "Enable throttle accumulator mode",
             "type": "bool",

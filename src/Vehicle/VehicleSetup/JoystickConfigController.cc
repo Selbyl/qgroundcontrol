@@ -61,7 +61,22 @@ void JoystickConfigController::_setJoystick(Joystick* joystick)
 
     _joystick = joystick;
     _readStoredCalibrationValues();
-    connect(_joystick, &Joystick::rawChannelValuesChanged, this, &JoystickConfigController::_rawChannelValuesChanged);
+    // Both the physical R2/L2 channels and the synthetic combined channel
+    // move when either trigger is pressed. Hide the two physical axes from
+    // calibration detection so the wizard reliably selects the COMBINED axis.
+    // This only affects the calibration UI, not normal input polling.
+    connect(_joystick, &Joystick::rawChannelValuesChanged, this,
+            [this](QVector<int> values) {
+        if (_joystick->isGamepad() &&
+            _joystick->settings()->dualThrottleEnabled()->rawValue().toBool()) {
+            const int forward = _joystick->settings()->dualThrottleForwardChannel()->rawValue().toInt() - 1;
+            const int reverse = _joystick->settings()->dualThrottleReverseChannel()->rawValue().toInt() - 1;
+            // Do not treat either raw trigger as an assignable stick function.
+            if (forward >= 0 && forward < values.size() - 1) values[forward] = 0;
+            if (reverse >= 0 && reverse < values.size() - 1) values[reverse] = 0;
+        }
+        _rawChannelValuesChanged(values);
+    });
 
     // Connect to settings changes to emit extension enabled signals
     connect(_joystick->settings()->enableManualControlPitchExtension(), &Fact::rawValueChanged, this, [this]() {

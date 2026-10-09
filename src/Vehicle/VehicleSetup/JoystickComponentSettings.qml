@@ -40,6 +40,60 @@ ColumnLayout {
             visible: fact.userVisible
         }
 
+        // Works with any SDL3-standardized gamepad (Steam Deck / Xbox / PS).
+        // Physical channels stay visible; a synthetic final channel becomes
+        // the one and only Throttle input during ordinary calibration.
+        FactCheckBoxSlider {
+            Layout.fillWidth: true
+            text: qsTr("Combine two triggers into one throttle axis")
+            fact: _joystickSettings.dualThrottleEnabled
+            visible: joystick.isGamepad && joystick.axisCount >= 3
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: joystick.isGamepad && _joystickSettings.dualThrottleEnabled.rawValue
+            spacing: _margins
+
+            QGCLabel {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: qsTr("Select the physical input channels for forward and reverse. A new, final channel named 'Combined throttle' will move R2/RT positive and L2/LT negative. Calibrate that final channel as Throttle; leave both triggers released when prompted to center controls. Changing this configuration requires recalibration.")
+            }
+
+            QGCLabel { text: qsTr("Forward trigger (R2 / RT)") }
+            QGCComboBox {
+                Layout.fillWidth: true
+                model: {
+                    let choices = [];
+                    for (let i = 0; i < joystick.axisCount - 1; ++i) {
+                        choices.push(qsTr("Channel %1 (%2)").arg(i + 1).arg(joystick.axisLabel(i)));
+                    }
+                    return choices;
+                }
+                currentIndex: Number(_joystickSettings.dualThrottleForwardChannel.rawValue) - 1
+                onActivated: (index) => {
+                    _joystickSettings.dualThrottleForwardChannel.rawValue = index + 1;
+                }
+            }
+
+            QGCLabel { text: qsTr("Reverse trigger (L2 / LT)") }
+            QGCComboBox {
+                Layout.fillWidth: true
+                model: {
+                    let choices = [];
+                    for (let i = 0; i < joystick.axisCount - 1; ++i) {
+                        choices.push(qsTr("Channel %1 (%2)").arg(i + 1).arg(joystick.axisLabel(i)));
+                    }
+                    return choices;
+                }
+                currentIndex: Number(_joystickSettings.dualThrottleReverseChannel.rawValue) - 1
+                onActivated: (index) => {
+                    _joystickSettings.dualThrottleReverseChannel.rawValue = index + 1;
+                }
+            }
+        }
+
         FactCheckBoxSlider {
             Layout.fillWidth: true
             text: qsTr("Spring loaded throttle smoothing")

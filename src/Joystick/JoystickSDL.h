@@ -158,6 +158,11 @@ private:
 
     QList<int> _gamepadAxes;
     QList<int> _nonGamepadAxes;
+
+    // Set on the UI thread when settings change, read by the polling thread.
+    std::atomic<bool> _dualThrottleEnabled{false};
+    std::atomic<int> _dualThrottleForwardChannel{6}; // one-based index
+    std::atomic<int> _dualThrottleReverseChannel{5}; // one-based index
     int _instanceId = -1;
 
     SDL_Joystick *_sdlJoystick = nullptr;
